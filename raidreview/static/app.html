@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raid Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: report header, pull strip with the selected pull's wipe trigger, raid summary, player x pull grid beside a sticky death recap, then causes */
+:root {
+  --bg: #f3f2ef; --surface: #ffffff; --sunk: #ebe9e4; --ink: #1d1c22; --muted: #67646f; --line: #d9d6cf;
+  --accent: #9a6a12; --accent-soft: #f3e6c8;
+  --v-avoid: #c46a12; --v-def: #6a4fd6; --v-heal: #c23b3b; --v-ko: #2f7f8f; --v-unav: #5d6b7c;
+  --dmg: #c23b3b; --heal: #2f8a4c;
+  --f-display: "Saira Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15141a; --surface: #1e1d25; --sunk: #191820; --ink: #ebe8f0; --muted: #9a96a6; --line: #2f2d38;
+  --accent: #e0b25a; --accent-soft: #3a2f1a;
+  --v-avoid: #f0954a; --v-def: #a08bff; --v-heal: #f06a6a; --v-ko: #4fb7c9; --v-unav: #8d9cb0;
+  --dmg: #f06a6a; --heal: #5ccf83; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15141a; --surface: #1e1d25; --sunk: #191820; --ink: #ebe8f0; --muted: #9a96a6; --line: #2f2d38;
+  --accent: #e0b25a; --accent-soft: #3a2f1a;
+  --v-avoid: #f0954a; --v-def: #a08bff; --v-heal: #f06a6a; --v-ko: #4fb7c9; --v-unav: #8d9cb0;
+  --dmg: #f06a6a; --heal: #5ccf83; color-scheme: dark }
+
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); }
+.wrap { max-width: 1320px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 56px; display: grid; gap: 20px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 700; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+h1 { font-size: 2.1rem; line-height: 1.05; }
+h2 { font-size: 1.25rem; text-transform: uppercase; letter-spacing: .06em; }
+.label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; min-width: 0; }
+a { color: var(--accent); }
+
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+header p { margin: 4px 0 0; color: var(--muted); }
+
+.pulls { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
+.pull { flex: 0 0 auto; min-width: 82px; text-align: left; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; display: grid; gap: 3px; }
+.pull:hover { border-color: var(--muted); }
+.pull[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.pull:focus-visible, .cell:focus-visible, .chip:focus-visible, .cause input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pull .n { font-family: var(--f-display); font-size: 1rem; font-weight: 700; }
+.pull .m { font-size: .72rem; color: var(--muted); }
+.bossbar { height: 4px; background: var(--sunk); border-radius: 2px; overflow: hidden; }
+.bossbar i { display: block; height: 100%; background: var(--accent); }
+.wipe { margin-top: 12px; display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
+.wipe p { margin: 0; max-width: 90ch; }
+.wipe .first { color: var(--muted); font-size: .88rem; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.stat { display: grid; gap: 2px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; border-left-width: 4px; }
+.stat .big { font-family: var(--f-display); font-size: 2rem; font-weight: 700; line-height: 1; }
+.stat .sub { color: var(--muted); font-size: .82rem; }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.cols > .recap { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow-y: auto; }
+@media (max-width: 980px) { .cols { grid-template-columns: minmax(0, 1fr); } .cols > .recap { position: static; max-height: none; } }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.gridwrap { overflow-x: auto; margin-top: 12px; }
+table.grid { border-collapse: collapse; font-size: .82rem; }
+.grid th, .grid td { padding: 2px 2px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.grid th { font-weight: 600; color: var(--muted); font-size: .7rem; text-align: center; }
+.grid th:first-child, .grid td:first-child { text-align: left; padding-right: 10px; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.grid th.cur { color: var(--accent); }
+.who { display: flex; align-items: center; gap: 7px; }
+.cls { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--line); }
+.who small { color: var(--muted); }
+.cell { width: 40px; height: 24px; border: 0; border-radius: 3px; font: 600 .66rem var(--f-mono); cursor: pointer; color: #fff; position: relative; }
+.cell.none { background: transparent; color: var(--line); cursor: default; font-weight: 400; }
+.cell.late { opacity: .32; }
+.cell.sel { box-shadow: 0 0 0 2px var(--ink); opacity: 1; }
+.cell sup { position: absolute; top: -1px; right: 2px; font-size: .58rem; }
+.tot { text-align: center; font-family: var(--f-mono); padding-inline: 8px !important; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.chip { font: 600 .75rem var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 99px; padding: 4px 10px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.recap { display: grid; gap: 14px; }
+.recap-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: start; }
+.recap-head h3 { font-size: 1.6rem; line-height: 1; }
+.verdict { display: inline-flex; align-items: center; gap: 6px; color: #fff; font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; padding: 4px 9px; border-radius: 3px; }
+.flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.flag { font-size: .75rem; border: 1px solid currentColor; border-radius: 3px; padding: 1px 7px; font-weight: 600; }
+.kb { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.kb > div { background: var(--sunk); border-radius: 4px; padding: 8px 10px; min-width: 0; }
+.kb .v { font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .kb { grid-template-columns: minmax(0, 1fr); } }
+.callout { background: var(--sunk); border-left: 3px solid var(--v-ko); padding: 8px 12px; border-radius: 3px; font-size: .88rem; margin: 0; }
+
+svg.hp { width: 100%; height: 110px; display: block; }
+.events { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.events td { padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.events td.t, .events td.a, .events td.h { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.events td.a, .events td.h { text-align: right; }
+.events tr.d td.a { color: var(--dmg); }
+.events tr.h td.a { color: var(--heal); }
+.events tr.kill td { font-weight: 600; }
+.events .src { color: var(--muted); }
+
+.defs { display: grid; gap: 6px; }
+.def { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 4px; background: var(--sunk); }
+.def .st { font-size: .74rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.def.ready { box-shadow: inset 3px 0 0 var(--v-def); }
+.def.ready .st { color: var(--v-def); }
+.def.cd .st, .def.used .st { color: var(--muted); }
+.def small { display: block; color: var(--muted); font-size: .76rem; }
+.healbox { display: grid; gap: 6px; }
+.meter { height: 8px; background: var(--sunk); border-radius: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--heal); }
+.note { color: var(--muted); font-size: .82rem; margin: 0; }
+
+.causes { display: grid; gap: 8px; margin-top: 10px; }
+.cause { display: grid; grid-template-columns: 20px minmax(0, 170px) minmax(0, 1fr) 32px; gap: 10px; align-items: center; font-size: .85rem; }
+.cause .bar { height: 14px; display: flex; border-radius: 2px; overflow: hidden; background: var(--sunk); }
+.cause .bar i { display: block; height: 100%; }
+.cause .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cause input { margin: 0; accent-color: var(--v-avoid); }
+
+.how { font-size: .85rem; color: var(--muted); display: grid; gap: 6px; }
+.how p { margin: 0; max-width: 80ch; }
+.how b { color: var(--ink); }
+#loading { color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { font: 600 .8rem var(--f-body); border: 0; background: var(--surface); color: var(--muted); padding: 5px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+.seg button:focus-visible, .abtn:focus-visible, .rank:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.grid tr.raid td { border-bottom: 2px solid var(--line); padding-bottom: 4px; }
+.grid .hp { font-weight: 600; color: inherit; text-align: center; width: 100%; }
+.cell.heat { color: var(--ink); font-weight: 500; width: 46px; }
+.abtn { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cause.on { background: var(--accent-soft); border-radius: 3px; box-shadow: 0 0 0 4px var(--accent-soft); }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ranks { display: grid; gap: 4px; }
+.rank { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 56px; gap: 10px; align-items: center; font: inherit; color: inherit; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 5px 2px; text-align: left; cursor: pointer; }
+.rank:hover { background: var(--sunk); }
+.rank .bar, .brk .bar { height: 10px; border-radius: 2px; background: var(--sunk); overflow: hidden; }
+.rank .bar i, .brk .bar i { display: block; height: 100%; background: var(--accent); }
+.brk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px 64px; gap: 10px; align-items: center; font-size: .84rem; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.brk.avoid .bar i { background: var(--v-avoid); }
+.brk .mono, .rank .mono { text-align: right; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; }
+.link { display: inline-flex; align-items: center; gap: 6px; font: 600 .8rem var(--f-body); color: var(--ink); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 4px; padding: 5px 10px; text-decoration: none; }
+.link:hover { background: var(--accent); color: var(--bg); }
+.link.quiet { background: none; border-color: var(--line); }
+.link svg { width: 10px; height: 10px; fill: currentColor; }
+.winbar { display: flex; align-items: center; gap: 10px; }
+.winbar input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.evbox { overflow: auto; max-height: 360px; border: 1px solid var(--line); border-radius: 4px; }
+.ab { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: help; }
+.ab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+#tip { position: fixed; z-index: 10; max-width: min(340px, calc(100vw - 16px)); background: var(--ink); color: var(--bg); padding: 10px 12px; border-radius: 6px; font-size: .82rem; line-height: 1.45; pointer-events: none; white-space: pre-line; box-shadow: 0 6px 24px rgb(0 0 0 / .25); }
+#tip b { display: block; font-family: var(--f-display); font-size: 1.05rem; margin-bottom: 4px; white-space: normal; }
+#tip small { display: block; margin-top: 6px; opacity: .65; font-size: .72rem; white-space: normal; }
+@media (prefers-reduced-motion: no-preference) { .pull, .cell, .chip { transition: box-shadow .12s, border-color .12s; } }
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: light; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+.top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-in { max-width: 1320px; margin: 0 auto; padding-inline: 16px; padding-block: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.brand { font: 700 1.2rem var(--f-display); letter-spacing: .04em; text-transform: uppercase; background: none; border: 0; color: var(--ink); padding: 0; cursor: pointer; }
+.embedded .brand { cursor: default; }
+.embedded .navbtn { display: none; }
+.crumb { color: var(--muted); font-size: .9rem; }
+.grow { flex: 1; }
+.btn { font: 600 .9rem var(--f-body); background: var(--ink); color: var(--bg); border: 0; border-radius: 4px; padding: 8px 14px; cursor: pointer; }
+a.btn { text-decoration: none; display: inline-block; }
+.btn:disabled { opacity: .5; cursor: progress; }
+.btn.small { font-size: .78rem; padding: 4px 10px; }
+.btn.ghost { background: none; color: var(--ink); border: 1px solid var(--line); }
+.btn.danger { background: var(--dmg); }
+.btn:focus-visible, .brand:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.form { display: grid; gap: 10px; max-width: 520px; margin-top: 12px; }
+.form.row { display: flex; gap: 8px; max-width: none; }
+.form.row input { flex: 1; min-width: 0; }
+.form label { display: grid; gap: 4px; font-weight: 600; font-size: .85rem; }
+input[type="text"], input:not([type]), input[type="password"], select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+.steps { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; max-width: 75ch; }
+.msg-err { color: var(--dmg); }
+.enc { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.enc.pick { background: var(--accent-soft); box-shadow: 0 0 0 8px var(--accent-soft); border-radius: 2px; }
+.enc .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.progress { margin-top: 14px; display: grid; gap: 6px; }
+.progress .meter i { background: var(--accent); transition: width .3s; }
+.saved { width: 100%; border-collapse: collapse; font-size: .88rem; margin-top: 10px; }
+.saved th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 6px; border-bottom: 1px solid var(--line); }
+.saved td { padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.saved td.acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.tablewrap { overflow-x: auto; }
+.hist td, .hist th { text-align: center; padding: 4px 8px !important; }
+.hist .better { color: var(--heal); font-weight: 600; }
+.hist .worse { color: var(--dmg); font-weight: 600; }
+.hist tr.raidrow td { background: var(--sunk); font-family: var(--f-mono); font-size: .8rem; }
+.hist th a { color: inherit; }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="top-in">
+    <button class="brand" id="goHome">Raid Review</button>
+    <span class="crumb" id="crumb"></span>
+    <span class="grow"></span>
+    <a class="link quiet navbtn" id="exportBtn" href="#" hidden>Export for sharing</a>
+    <button class="chip navbtn" id="goHistory">Compare nights</button>
+    <button class="chip navbtn" id="goSettings">Settings</button>
+  </div>
+</nav>
+<div class="wrap" id="reviewView" hidden>
+  <header>
+    <div>
+      <div class="label" id="metaLabel"></div>
+      <h1 id="reviewTitle"></h1>
+      <p id="sub">Loading the log...</p>
+    </div>
+    <div class="legend" id="legend"></div>
+  </header>
+
+  <section class="panel">
+    <div class="toolbar">
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+        <h2>Pulls</h2>
+        <div class="seg" role="group" aria-label="View">
+          <button id="vDeaths" aria-pressed="true">Deaths</button><button id="vDamage" aria-pressed="false">Damage taken</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="chip" id="all" aria-pressed="false">All pulls</button>
+        <button class="chip" id="late" aria-pressed="false">Include the wipe</button>
+      </div>
+    </div>
+    <div class="pulls" id="pulls" style="margin-top:10px"></div>
+    <div class="wipe" id="wipe"></div>
+  </section>
+
+  <section class="stats" id="stats"></section>
+
+  <div class="cols">
+    <div style="display:grid;gap:20px;min-width:0">
+      <section class="panel">
+        <div class="toolbar"><h2 id="gridTitle">Deaths by player</h2><span class="label" id="gridHint">click a death for the recap</span></div>
+        <div class="gridwrap"><table class="grid" id="grid"></table></div>
+      </section>
+      <section class="panel">
+        <div class="toolbar"><h2 id="causesTitle">What killed people</h2><span class="label" id="causesHint">tick = counts as avoidable</span></div>
+        <div class="causes" id="causes"></div>
+      </section>
+    </div>
+    <section class="panel recap" id="recap"><p id="loading">Loading deaths...</p></section>
+  </div>
+
+  <section class="panel how">
+    <h2 style="color:var(--ink)">How each death is judged</h2>
+    <p><b>Wipe deaths</b>: once five players die within three seconds, or after the fifth death of a pull, the rest are part of the wipe. They are dimmed and left out of the totals unless you include them. Each pull names its wipe trigger.</p>
+    <p><b>No damage logged</b>: no killing blow was logged and the player was above 30% health in their last two seconds. That is usually a knock off the platform, a fall or a scripted instant kill, so defensives and heals are not judged.</p>
+    <p><b>Avoidable</b>: the killing blow is an ability ticked under "What killed people". Some bosses start with a list from public guides, the rest start with nothing ticked. Tick what your strat says is avoidable; the list is saved per boss.</p>
+    <p><b>Defensive ready</b>: the player had a personal, Healthstone or health potion off cooldown, and the overkill was under 45% of their max health. A player only gets checked for a defensive they cast at least once in this review, so untalented spells never count. Cooldowns are base values, shortened when the player cast it faster than that in this review.</p>
+    <p><b>No heals</b>: healing plus shield absorbs in the last 5 seconds came to under 10% of max health. The recap shows how many healers were alive; range is not in the log.</p>
+    <p>Hover or tab to any underlined ability to see what it does. Descriptions come from Wowhead.</p>
+  </section>
+</div>
+<div class="wrap" id="homeView" hidden>
+  <section class="panel" id="setup" hidden>
+    <h2>Connect to Warcraft Logs</h2>
+    <p class="note" style="margin-top:6px">Raid Review reads logs through the Warcraft Logs API. Each person uses their own free API client.</p>
+    <ol class="steps">
+      <li>Open <a href="https://www.warcraftlogs.com/api/clients/" target="_blank" rel="noopener">warcraftlogs.com/api/clients</a> and sign in.</li>
+      <li>Click <b>Create Client</b>. Use any name, enter <span class="mono">http://localhost</span> as the redirect URL, and leave "Public Client" unticked.</li>
+      <li>Copy the client ID and the client secret into the boxes below.</li>
+    </ol>
+    <form class="form" id="credForm">
+      <label for="cid">Client ID <input id="cid" autocomplete="off" spellcheck="false" required></label>
+      <label for="csecret">Client secret <input id="csecret" type="password" autocomplete="off" required></label>
+      <div><button class="btn" type="submit" id="credBtn">Save and test</button></div>
+      <p class="note" id="credMsg" role="status"></p>
+    </form>
+    <p class="note">Your client is stored only on this PC, in %APPDATA%\RaidReview.</p>
+  </section>
+
+  <section class="panel" id="openPanel" hidden>
+    <h2>Review a report</h2>
+    <form class="form row" id="reportForm">
+      <input id="link" placeholder="Paste a Warcraft Logs report link" autocomplete="off" spellcheck="false" required aria-label="Warcraft Logs report link">
+      <button class="btn" type="submit" id="lookBtn">Look up</button>
+    </form>
+    <p class="note" id="reportMsg" role="status" style="margin-top:8px"></p>
+    <div id="encounters"></div>
+    <div class="progress" id="progress" hidden>
+      <div style="display:flex;justify-content:space-between;gap:8px"><span id="progStage">Starting</span><span class="mono note" id="progNum"></span></div>
+      <div class="meter"><i id="progBar" style="width:0%"></i></div>
+      <p class="note">A night of 30 pulls takes about a minute. Warcraft Logs allows roughly two full reviews an hour per API client.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Saved reviews</h2>
+    <div class="tablewrap"><table class="saved" id="saved"></table></div>
+  </section>
+</div>
+
+<div class="wrap" id="historyView" hidden>
+  <header>
+    <div>
+      <div class="label">Compare nights</div>
+      <h1 id="histTitle">Compare nights</h1>
+      <p>Each column is a saved review. Green means better than the previous night, red means worse.</p>
+    </div>
+  </header>
+  <section class="panel">
+    <div class="toolbar">
+      <label class="label" for="histBoss" style="display:flex;gap:8px;align-items:center">Boss <select id="histBoss"></select></label>
+      <div class="seg" role="group" aria-label="Measure" id="histMetric"></div>
+    </div>
+    <p class="note" id="histNote" style="margin-top:8px"></p>
+    <div class="gridwrap"><table class="grid hist" id="histTable"></table></div>
+  </section>
+</div>
+<div id="tip" role="tooltip" hidden></div>
+<!--EMBED-->
+
+<script>
+const CLS = { DeathKnight: "#C41E3A", DemonHunter: "#A330C9", Druid: "#FF7C0A", Evoker: "#33937F", Hunter: "#AAD372", Mage: "#3FC7EB", Monk: "#00FF98", Paladin: "#F48CBA", Priest: "#FFFFFF", Rogue: "#FFF468", Shaman: "#0070DD", Warlock: "#8788EE", Warrior: "#C69B6D" };
+const VERDICTS = {
+  avoid: { label: "Avoidable", color: "var(--v-avoid)" },
+  ko:    { label: "No damage logged", color: "var(--v-ko)" },
+  def:   { label: "Defensive ready", color: "var(--v-def)" },
+  heal:  { label: "No heals", color: "var(--v-heal)" },
+  unav:  { label: "Nothing flagged", color: "var(--v-unav)" },
+};
+let KO = "No damage logged";
+const fmtT = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const k = n => n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : Math.round(n / 1e3) + "k";
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ab = n => `<span class="ab" tabindex="0" data-ab="${esc(n)}">${esc(n)}</span>`;
+let WCL = "";
+const PLAY = `<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l9 5-9 5z"/></svg>`;
+// the replay view fails to load when start/end are added, so links open the pull and the time is shown on the button
+const replayUrl = fight => `${WCL}?fight=${fight}&view=replay`;
+const spaced = c => c.replace(/([a-z])([A-Z])/g, "$1 $2");
+
+let D, PULLS, avoid;
+const state = { pull: null, all: false, late: false, sel: null, view: "deaths", ab: "__avoid", dsel: null, hide: false, win: 10 };
+const shown = a => !state.hide || avoid.has(a);
+const visible = d => state.late || !d.late;
+const scope = () => D.deaths.filter(d => (state.all || d.f === state.pull) && visible(d));
+
+function judge(d) {
+  const f = [];
+  const ko = d.kb === KO;
+  if (avoid.has(d.kb)) f.push("avoid");
+  if (ko) f.push("ko");
+  if (!ko && d.defs.some(x => x.s === "ready") && d.ok < d.max * 0.45) f.push("def");
+  if (!ko && d.h5 < d.max * 0.1) f.push("heal");
+  d.flags = f;
+  d.verdict = f[0] || "unav";
+}
+
+$("legend").innerHTML = Object.values(VERDICTS).map(v => `<span><i class="sw" style="background:${v.color}"></i>${v.label}</span>`).join("");
+
+function renderPulls() {
+  $("pulls").innerHTML = PULLS.map(p => `
+    <button class="pull" data-id="${p.id}" aria-pressed="${!state.all && state.pull === p.id}">
+      <span class="n">Pull ${p.n}</span>
+      <span class="m mono">${fmtT(p.dur)} · ${p.kill ? "Kill" : p.boss.toFixed(1) + "%"}</span>
+      <span class="bossbar" title="Boss health removed"><i style="width:${100 - p.boss}%"></i></span>
+    </button>`).join("");
+  $("all").setAttribute("aria-pressed", state.all);
+  $("late").setAttribute("aria-pressed", state.late);
+
+  if (state.all) {
+    const c = new Map();
+    PULLS.forEach(p => { if (p.trigger) c.set(p.trigger, (c.get(p.trigger) || 0) + 1); });
+    const top = [...c.entries()].sort((a, b) => b[1] - a[1]).map(([a, n]) => `${ab(a)} (${n})`).join(", ");
+    $("wipe").innerHTML = `<p><b>What ended the ${PULLS.filter(p => !p.kill).length} wipes:</b> ${top || "no single wipe moment"}.</p><p class="first">Best pull: Pull ${PULLS.reduce((a, b) => a.boss < b.boss ? a : b).n} at ${Math.min(...PULLS.map(p => p.boss)).toFixed(1)}%.</p>`;
+    return;
+  }
+  const p = PULLS.find(x => x.id === state.pull), ds = D.deaths.filter(d => d.f === p.id);
+  const early = ds.filter(d => !d.late);
+  const firstTxt = early.length ? early.map(d => `${fmtT(d.ts)} ${esc(d.p)} (${ab(d.kb)})`).join(" · ") : "none";
+  $("wipe").innerHTML = p.wipe != null
+    ? `<p><b>Pull ${p.n} wipe at ${fmtT(p.wipe)}:</b> ${p.burst} players died within 3 seconds, mostly to <b>${ab(p.trigger)}</b>. Boss at ${p.boss.toFixed(1)}%.</p><p class="first">Before that: ${firstTxt}</p><div class="links"><a class="link quiet" href="${replayUrl(p.id)}" target="_blank" rel="noopener">${PLAY} Replay pull ${p.n} on Warcraft Logs (wipe at ${fmtT(p.wipe)})</a></div>`
+    : p.kill ? `<p><b>Pull ${p.n}: kill</b> in ${fmtT(p.dur)}.</p><p class="first">Deaths: ${firstTxt}</p><div class="links"><a class="link quiet" href="${replayUrl(p.id)}" target="_blank" rel="noopener">${PLAY} Replay pull ${p.n} on Warcraft Logs</a></div>`
+    : `<p><b>Pull ${p.n}:</b> no single wipe moment, the raid died over time. Boss at ${p.boss.toFixed(1)}%.</p><p class="first">First deaths: ${firstTxt}</p>`;
+}
+
+function renderStats() {
+  const ds = scope(), c = f => ds.filter(d => d.flags.includes(f)).length;
+  const tiles = [
+    ["Deaths", ds.length, state.late ? "including wipe deaths" : "before the wipe", "var(--ink)"],
+    ["Avoidable", c("avoid"), "killed by a ticked mechanic", VERDICTS.avoid.color],
+    ["No damage logged", c("ko"), "knock-off, fall or instant kill", VERDICTS.ko.color],
+    ["Defensive ready", c("def"), "died with a personal, stone or pot up", VERDICTS.def.color],
+    ["No heals", c("heal"), "under 10% max HP healed in last 5s", VERDICTS.heal.color],
+  ];
+  $("stats").innerHTML = tiles.map(([l, n, s, col]) => `<div class="stat" style="border-left-color:${col}"><span class="label">${l}</span><span class="big">${n}</span><span class="sub">${s}</span></div>`).join("");
+}
+
+function renderGrid() {
+  const players = new Map();
+  D.deaths.forEach(d => { if (!players.has(d.p)) players.set(d.p, { name: d.p, cls: d.cls, spec: d.spec, n: 0 }); if (visible(d)) players.get(d.p).n++; });
+  const rows = [...players.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  let h = `<thead><tr><th>Player</th>${PULLS.map(p => `<th class="${!state.all && state.pull === p.id ? "cur" : ""}">${p.n}</th>`).join("")}<th>Total</th></tr></thead><tbody>`;
+  for (const p of rows) {
+    h += `<tr><td><span class="who"><i class="cls" style="background:${CLS[p.cls] || "var(--muted)"}"></i>${esc(p.name)} <small>${esc(p.spec)}</small></span></td>`;
+    for (const pl of PULLS) {
+      const ds = D.deaths.filter(x => x.f === pl.id && x.p === p.name && visible(x));
+      if (!ds.length) { h += `<td><button class="cell none" tabindex="-1" aria-hidden="true">·</button></td>`; continue; }
+      const d = ds.includes(state.sel) ? state.sel : ds[0];
+      h += `<td><button class="cell${d.late ? " late" : ""}${state.sel === d ? " sel" : ""}" style="background:${VERDICTS[d.verdict].color}" data-i="${D.deaths.indexOf(d)}" title="${esc(`${p.name}, pull ${pl.n}: ${d.kb} at ${fmtT(d.ts)}`)}">${fmtT(d.ts)}${ds.length > 1 ? "<sup>+</sup>" : ""}</button></td>`;
+    }
+    h += `<td class="tot">${p.n || ""}</td></tr>`;
+  }
+  $("grid").innerHTML = h + "</tbody>";
+}
+
+function renderCauses() {
+  const ds = scope(), by = new Map();
+  ds.forEach(d => { const e = by.get(d.kb) || { n: 0 }; e[d.verdict] = (e[d.verdict] || 0) + 1; e.n++; by.set(d.kb, e); });
+  const rows = [...by.entries()].sort((a, b) => b[1].n - a[1].n), max = Math.max(1, ...rows.map(r => r[1].n));
+  $("causes").innerHTML = rows.length ? rows.map(([name, e], i) => `
+    <label class="cause"><input type="checkbox" id="av${i}" data-a="${esc(name)}" ${avoid.has(name) ? "checked" : ""}>
+      <span class="name">${ab(name)}</span>
+      <span class="bar" style="width:${(e.n / max) * 100}%">${Object.keys(VERDICTS).map(v => e[v] ? `<i style="width:${(e[v] / e.n) * 100}%;background:${VERDICTS[v].color}" title="${VERDICTS[v].label}: ${e[v]}"></i>` : "").join("")}</span>
+      <span class="mono">${e.n}</span></label>`).join("") : `<p class="note">No deaths in this selection.</p>`;
+}
+
+function hpChart(d) {
+  const span = state.win, pts = d.ev.filter(e => e.hp != null && e.t >= -span);
+  if (!pts.length) return `<p class="note">No health data in the last ${span} seconds.</p>`;
+  const W = 400, H = 110, pad = 6, x = t => pad + ((t + span) / span) * (W - pad * 2), y = hp => pad + (1 - Math.min(1, hp / d.max)) * (H - pad * 2 - 14);
+  const series = pts.map(e => [e.t, e.hp]).concat([[0, 0]]);
+  const line = series.map(([t, h], i) => `${i ? "L" : "M"}${x(t).toFixed(1)},${y(h).toFixed(1)}`).join("");
+  const area = `${line}L${x(series[0][0]).toFixed(1)},${y(0)}Z`;
+  const ticks = [0, 1, 2, 3, 4, 5].map(i => -span + i * span / 5).map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${pad}" y2="${H - 14}" stroke="var(--line)"/><text x="${x(t)}" y="${H - 2}" text-anchor="${t === 0 ? "end" : t === -span ? "start" : "middle"}" font-size="10" fill="var(--muted)" font-family="var(--f-mono)">${t}s</text>`).join("");
+  const win = `<rect x="${x(-5)}" y="${pad}" width="${x(0) - x(-5)}" height="${H - 14 - pad}" fill="var(--sunk)"/>`;
+  const marks = pts.map(e => `<circle cx="${x(e.t).toFixed(1)}" cy="${y(e.hp).toFixed(1)}" r="2" fill="${e.k === "h" ? "var(--heal)" : "var(--dmg)"}"/>`).join("");
+  return `<svg class="hp" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Health over the last ${span} seconds">${win}${ticks}<path d="${area}" fill="var(--dmg)" fill-opacity=".1"/><path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>${marks}</svg>`;
+}
+
+function renderRecap() {
+  const d = state.sel;
+  if (!d) { $("recap").innerHTML = `<h2>Death recap</h2><p class="note">Pick a death in the grid to see the seconds before it, which defensives were up, and how much healing landed.</p>`; return; }
+  const v = VERDICTS[d.verdict], pct = d.max ? Math.min(100, (d.h5 / d.max) * 100) : 0, pull = PULLS.find(p => p.id === d.f);
+  const ko = d.kb === KO;
+  const last10 = d.ev.filter(e => e.t >= -10);
+  const h10 = last10.reduce((t, e) => t + (e.k === "h" ? e.amt : e.abs || 0), 0);
+  const d10 = last10.reduce((t, e) => t + (e.k === "d" ? e.amt : 0), 0);
+  const pct10 = d.max ? Math.min(100, (h10 / d.max) * 100) : 0;
+  const evRows = d.ev.filter(e => e.t >= -state.win).reverse().map(e => `
+      <tr class="${e.k}"><td class="t">${e.t.toFixed(1)}s</td>
+      <td>${ab(e.a)} ${e.src ? `<span class="src">from ${esc(e.src)}</span>` : ""}</td>
+      <td class="a">${e.k === "h" ? "+" : "−"}${k(e.amt)}${e.abs ? ` <span class="src">(${k(e.abs)} absorbed)</span>` : ""}</td><td class="h">${e.hp != null && d.max ? Math.round(e.hp / d.max * 100) + "%" : ""}</td></tr>`).join("");
+  const healNote = d.healers[1] && d.healers[0] < d.healers[1]
+    ? `${d.healers[1] - d.healers[0]} of ${d.healers[1]} healers were already dead.`
+    : "Every healer was alive, so check range and who they were healing.";
+  $("recap").innerHTML = `
+    <div class="recap-head">
+      <div><div class="label">Pull ${pull.n} · ${fmtT(d.ts)} · death ${d.ord} of the pull${d.late ? " · part of the wipe" : ""}</div>
+        <h3><span class="who" style="gap:10px"><i class="cls" style="background:${CLS[d.cls] || "var(--muted)"};width:12px;height:12px"></i>${esc(d.p)}</span></h3>
+        <div class="note">${esc(d.spec)} ${esc(spaced(d.cls))}</div></div>
+      <span class="verdict" style="background:${v.color}">${v.label}</span>
+    </div>
+    <div class="links">
+      <a class="link" href="${replayUrl(d.f)}" target="_blank" rel="noopener">${PLAY} Watch replay on Warcraft Logs (died at ${fmtT(d.ts)})</a>
+      <a class="link quiet" href="${WCL}?fight=${d.f}&type=deaths&source=${d.id}&start=${d.at - 10000}&end=${d.at + 2000}" target="_blank" rel="noopener">Death log</a>
+    </div>
+    <div class="flags">${d.flags.map(f => `<span class="flag" style="color:${VERDICTS[f].color}">${VERDICTS[f].label}</span>`).join("")}</div>
+    <div class="kb">
+      <div><div class="label">Killed by</div><div class="v">${ab(d.kb)}</div></div>
+      <div><div class="label">Overkill</div><div class="v mono">${d.ok ? `${k(d.ok)} <span class="note">(${Math.round(d.ok / d.max * 100)}%)</span>` : "none"}</div></div>
+      <div><div class="label">Max health</div><div class="v mono">${k(d.max)}</div></div>
+    </div>
+    ${ko ? `<p class="callout">No damage was logged when ${esc(d.p)} died, and they had health to spare. That is usually a knock off the platform, a fall or an instant kill, so defensives and heals are not judged for this one.</p>` : ""}
+    <div class="winbar"><label class="label" for="winR">Recap length</label>
+      <input type="range" id="winR" min="5" max="${D.recapWindow}" step="5" value="${state.win}" aria-valuetext="${state.win} seconds">
+      <span class="mono" id="winV">${state.win}s</span></div>
+    <div><div class="label">Health, last ${state.win} seconds <span style="text-transform:none;letter-spacing:0">(shaded: 5s heal window)</span></div>${hpChart(d)}</div>
+    <div class="evbox"><table class="events"><tbody>
+      <tr class="d kill"><td class="t">0.0s</td><td>Died to ${ab(d.kb)}</td><td class="a"></td><td class="h">dead</td></tr>${evRows}</tbody></table></div>
+    <div><div class="label" style="margin-bottom:6px">Defensives at time of death</div><div class="defs">${d.defs.length ? d.defs.map(x => `
+      <div class="def ${x.s}"><span>${ab(x.n)}<small>${esc(x.note)}</small></span>
+      <span class="st">${x.s === "ready" ? "Ready, not used" : x.s === "cd" ? "On cooldown" : "Used"}</span></div>`).join("") : `<p class="note">No personal defensives cast by this player tonight.</p>`}</div>
+      <p class="note" style="margin-top:6px">${d.ext.length ? "Externals received: " + d.ext.map(e => `${ab(e.n)} from ${esc(e.by)} (${Math.abs(e.t)}s before)`).join(", ") : "No external cooldowns received in the last 12 seconds."}</p></div>
+    <div class="healbox"><div class="label">Healing and shields received, last 5 seconds</div>
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span class="mono">${k(d.h5)} healed · ${k(d.d5)} taken · ${pct.toFixed(0)}% of max HP</span><span class="note">${d.healers[0]}/${d.healers[1]} healers alive</span></div>
+      <div class="meter"><i style="width:${pct}%"></i></div>
+      <div class="label" style="margin-top:6px">Last 10 seconds, for context</div>
+      <span class="mono">${k(h10)} healed · ${k(d10)} taken · ${pct10.toFixed(0)}% of max HP</span>
+      <div class="meter"><i style="width:${pct10}%;opacity:.55"></i></div>
+      <p class="note">${ko ? "Not judged for a knock-off." : d.h5 < d.max * 0.1 ? `Little to no healing landed. ${healNote}` : "Healing was landing; the damage outpaced it."} The verdict uses the last 5 seconds only.</p></div>`;
+}
+
+const tip = $("tip");
+function showTip(el) {
+  const t = D && D.tips[el.dataset.ab];
+  if (!t) return;
+  const desc = t.d.replace(/\d{4,}/g, n => (+n).toLocaleString());
+  tip.innerHTML = `<b>${esc(el.dataset.ab)}</b>${esc(desc)}${t.id ? "<small>From Wowhead. Damage values may not match this difficulty.</small>" : ""}`;
+  tip.hidden = false;
+  const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+  const top = r.bottom + h + 8 > innerHeight ? r.top - h - 6 : r.bottom + 6;
+  tip.style.left = left + "px"; tip.style.top = Math.max(8, top) + "px";
+}
+const hideTip = () => { tip.hidden = true; };
+document.addEventListener("mouseover", e => { const el = e.target.closest(".ab"); el ? showTip(el) : hideTip(); });
+document.addEventListener("focusin", e => { const el = e.target.closest(".ab"); el ? showTip(el) : hideTip(); });
+document.addEventListener("focusout", hideTip);
+document.addEventListener("scroll", hideTip, true);
+
+const scopePulls = () => state.all ? PULLS : PULLS.filter(p => p.id === state.pull);
+const dmgRows = fid => D.dmg[fid][state.late ? "all" : "pre"];
+const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
+const sumAvoid = o => Object.entries(o).reduce((a, [n, v]) => a + (avoid.has(n) ? v : 0), 0);
+const pick = o => state.ab === "__all" ? sum(o) : state.ab === "__avoid" ? sumAvoid(o) : (o[state.ab] || 0);
+const filterName = () => state.ab === "__all" ? "all damage" : state.ab === "__avoid" ? "avoidable damage" : state.ab;
+
+// per player totals by ability across the pulls in scope
+function playerTotals(pulls) {
+  const m = new Map();
+  for (const p of pulls) for (const [name, [cls, spec, abs]] of Object.entries(dmgRows(p.id))) {
+    const e = m.get(name) || { name, cls, spec, abs: {}, pulls: 0 };
+    e.pulls++;
+    for (const [a, v] of Object.entries(abs)) e.abs[a] = (e.abs[a] || 0) + v;
+    m.set(name, e);
+  }
+  return [...m.values()];
+}
+
+function renderDmgStats() {
+  const ps = playerTotals(scopePulls());
+  const total = ps.reduce((a, p) => a + sum(p.abs), 0), av = ps.reduce((a, p) => a + sumAvoid(p.abs), 0);
+  const top = ps.slice().sort((a, b) => pick(b.abs) - pick(a.abs))[0];
+  const where = state.all ? `across ${PULLS.length} pulls` : `pull ${PULLS.find(p => p.id === state.pull).n}`;
+  const byAb = new Map();
+  ps.forEach(p => Object.entries(p.abs).forEach(([a, v]) => { if (avoid.has(a)) byAb.set(a, (byAb.get(a) || 0) + v); }));
+  const worst = [...byAb.entries()].sort((a, b) => b[1] - a[1])[0];
+  const tiles = state.hide ? [
+    ["Avoidable damage", k(av), where, VERDICTS.avoid.color],
+    ["Biggest source", worst ? ab(worst[0]) : "none", worst ? `${k(worst[1])} taken` : "", VERDICTS.avoid.color],
+    ["Most " + (state.ab.startsWith("__") ? filterName() : state.ab), top ? esc(top.name) : "none", top ? `${k(pick(top.abs))} taken` : "", "var(--accent)"],
+  ] : [
+    ["Damage taken", k(total), state.all ? `across ${PULLS.length} pulls` : `pull ${PULLS.find(p => p.id === state.pull).n}`, "var(--ink)"],
+    ["Avoidable", k(av), `${total ? Math.round(av / total * 100) : 0}% of the total`, VERDICTS.avoid.color],
+    ["Most " + (state.ab.startsWith("__") ? filterName() : state.ab), top ? esc(top.name) : "none", top ? `${k(pick(top.abs))} taken` : "", "var(--accent)"],
+  ];
+  $("stats").innerHTML = tiles.map(([l, n, s, col]) => `<div class="stat" style="border-left-color:${col}"><span class="label">${esc(l)}</span><span class="big" style="${n.length > 12 ? "font-size:1.3rem" : ""}">${n}</span><span class="sub">${s}</span></div>`).join("");
+}
+
+function renderDmgGrid() {
+  const all = playerTotals(PULLS).sort((a, b) => pick(b.abs) - pick(a.abs) || a.name.localeCompare(b.name));
+  const cells = PULLS.map(p => dmgRows(p.id));
+  let max = 1;
+  cells.forEach(rows => Object.values(rows).forEach(([, , abs]) => { max = Math.max(max, pick(abs)); }));
+  const raid = cells.map(rows => Object.values(rows).reduce((t, [, , abs]) => t + pick(abs), 0)), rmax = Math.max(1, ...raid);
+  let h = `<thead><tr><th>Player</th>${PULLS.map(p => `<th class="${!state.all && state.pull === p.id ? "cur" : ""}"><button class="abtn hp" data-pull="${p.id}" title="Show the raid for pull ${p.n}">${p.n}</button></th>`).join("")}<th>Total</th></tr></thead><tbody>`;
+  h += `<tr class="raid"><td><b>Raid total</b></td>${PULLS.map((pl, i) => `<td><button class="cell heat${!state.dsel && !state.all && state.pull === pl.id ? " sel" : ""}" style="background:color-mix(in srgb, var(--accent) ${Math.round(10 + 70 * raid[i] / rmax)}%, var(--surface))" data-pull="${pl.id}" title="${esc(`Raid, pull ${pl.n}: ${k(raid[i])} ${filterName()}`)}">${raid[i] ? k(raid[i]) : "·"}</button></td>`).join("")}<td class="tot">${k(raid.reduce((a, b) => a + b, 0))}</td></tr>`;
+  for (const p of all) {
+    h += `<tr><td><span class="who"><i class="cls" style="background:${CLS[p.cls] || "var(--muted)"}"></i>${esc(p.name)} <small>${esc(p.spec)}</small></span></td>`;
+    PULLS.forEach((pl, i) => {
+      const r = cells[i][p.name], v = r ? pick(r[2]) : 0;
+      if (!v) { h += `<td><button class="cell none" tabindex="-1" aria-hidden="true">·</button></td>`; return; }
+      const sel = state.dsel === p.name && (state.all || state.pull === pl.id);
+      h += `<td><button class="cell heat${sel ? " sel" : ""}" style="background:color-mix(in srgb, var(--accent) ${Math.round(10 + 70 * v / max)}%, var(--surface))" data-dp="${esc(p.name)}" data-f="${pl.id}" title="${esc(`${p.name}, pull ${pl.n}: ${k(v)} ${filterName()}`)}">${k(v)}</button></td>`;
+    });
+    h += `<td class="tot">${k(pick(p.abs))}</td></tr>`;
+  }
+  $("grid").innerHTML = h + "</tbody>";
+}
+
+function renderDmgCauses() {
+  const ps = playerTotals(scopePulls()), by = new Map();
+  ps.forEach(p => Object.entries(p.abs).forEach(([a, v]) => by.set(a, (by.get(a) || 0) + v)));
+  const rows = [...by.entries()].filter(([a]) => shown(a)).sort((a, b) => b[1] - a[1]), max = Math.max(1, ...rows.map(r => r[1]));
+  const chip = (id, label) => `<button class="chip" data-ab="${id}" aria-pressed="${state.ab === id}">${label}</button>`;
+  $("causes").innerHTML = `<div class="filters">${chip("__avoid", "Avoidable only")}${state.hide ? "" : chip("__all", "All damage")}<button class="chip" id="hideUn" aria-pressed="${state.hide}">Hide unavoidable</button></div>` + rows.map(([name, v], i) => `
+    <div class="cause${state.ab === name ? " on" : ""}"><input type="checkbox" id="dv${i}" data-a="${esc(name)}" ${avoid.has(name) ? "checked" : ""} aria-label="Count ${esc(name)} as avoidable">
+      <button class="abtn" data-ab="${esc(name)}">${ab(name)}</button>
+      <span class="bar" style="width:${(v / max) * 100}%"><i style="width:100%;background:${avoid.has(name) ? VERDICTS.avoid.color : VERDICTS.unav.color}"></i></span>
+      <span class="mono">${k(v)}</span></div>`).join("") + (state.hide ? `<p class="note">Unavoidable abilities are hidden. Turn off "Hide unavoidable" to tick more.</p>` : "");
+}
+
+function renderDmgRecap() {
+  const pulls = scopePulls();
+  const ps = playerTotals(pulls);
+  const where = pulls.length === 1 ? `pull ${pulls[0].n}` : `${pulls.length} pulls`;
+  const me = state.dsel && ps.find(p => p.name === state.dsel);
+  if (!me) {
+    const ranked = ps.filter(p => pick(p.abs)).sort((a, b) => pick(b.abs) - pick(a.abs)), max = ranked.length ? pick(ranked[0].abs) : 1;
+    $("recap").innerHTML = `<div><div class="label">${where}</div><h3 style="font-size:1.6rem">Most ${esc(filterName())}</h3></div>
+      <div class="ranks">${ranked.map(p => `<button class="rank" data-dp="${esc(p.name)}"><span class="who"><i class="cls" style="background:${CLS[p.cls] || "var(--muted)"}"></i>${esc(p.name)}</span><span class="bar"><i style="width:${pick(p.abs) / max * 100}%"></i></span><span class="mono">${k(pick(p.abs))}</span></button>`).join("") || `<p class="note">Nobody took ${esc(filterName())} here.</p>`}</div>
+      <p class="note">Click a player or a grid cell for their breakdown. Players who died early took less, so compare within a pull.</p>`;
+    return;
+  }
+  const n = ps.length, avg = a => ps.reduce((t, p) => t + (p.abs[a] || 0), 0) / n;
+  const rows = Object.entries(me.abs).filter(([a]) => shown(a)).sort((a, b) => b[1] - a[1]), max = rows.length ? rows[0][1] : 1;
+  const avRank = ps.slice().sort((a, b) => sumAvoid(b.abs) - sumAvoid(a.abs)).findIndex(p => p === me) + 1;
+  const deaths = D.deaths.filter(d => d.p === me.name && pulls.some(p => p.id === d.f) && visible(d));
+  $("recap").innerHTML = `
+    <div class="recap-head">
+      <div><div class="label">${where} · damage taken${state.late ? "" : " before the wipe"}</div>
+        <h3><span class="who" style="gap:10px"><i class="cls" style="background:${CLS[me.cls] || "var(--muted)"};width:12px;height:12px"></i>${esc(me.name)}</span></h3>
+        <div class="note">${esc(me.spec)} ${esc(spaced(me.cls))}</div></div>
+      <button class="chip" id="dclear">Back to ranking</button>
+    </div>
+    <div class="kb">
+      ${state.hide
+        ? `<div><div class="label">Raid avg avoidable</div><div class="v mono">${k(ps.reduce((t, p) => t + sumAvoid(p.abs), 0) / n)}</div></div>`
+        : `<div><div class="label">Total taken</div><div class="v mono">${k(sum(me.abs))}</div></div>`}
+      <div><div class="label">Avoidable</div><div class="v mono">${k(sumAvoid(me.abs))}</div></div>
+      <div><div class="label">Avoidable rank</div><div class="v mono">${avRank} of ${n}</div></div>
+    </div>
+    <div><div class="brk label" style="border:0"><span>Ability</span><span></span><span class="mono">Taken</span><span class="mono">Raid avg</span></div>
+    ${rows.map(([a, v]) => `<div class="brk${avoid.has(a) ? " avoid" : ""}"><span>${ab(a)}</span><span class="bar"><i style="width:${v / max * 100}%"></i></span><span class="mono">${k(v)}</span><span class="mono" style="color:${v > avg(a) * 1.5 ? "var(--v-avoid)" : "var(--muted)"}">${k(avg(a))}</span></div>`).join("")}</div>
+    ${rows.length ? "" : `<p class="note">No avoidable damage taken.</p>`}
+    <p class="note">${state.hide ? "" : "Orange bars are abilities ticked as avoidable. "}A raid average in orange means this player took over 1.5 times the average.</p>
+    <div><div class="label" style="margin-bottom:6px">Deaths in ${where}</div>${deaths.length ? `<div class="ranks">${deaths.map(d => `<button class="rank" data-i="${D.deaths.indexOf(d)}"><span>Pull ${PULLS.find(p => p.id === d.f).n} · ${fmtT(d.ts)}</span><span>${esc(d.kb)}</span><span class="mono" style="color:${VERDICTS[d.verdict].color}">recap</span></button>`).join("")}</div>` : `<p class="note">No deaths${state.late ? "" : " before the wipe"}.</p>`}</div>`;
+}
+
+function render() {
+  const dmg = state.view === "damage";
+  if (state.hide && (state.ab === "__all" || (!state.ab.startsWith("__") && !avoid.has(state.ab)))) state.ab = "__avoid";
+  $("vDeaths").setAttribute("aria-pressed", !dmg);
+  $("vDamage").setAttribute("aria-pressed", dmg);
+  $("gridTitle").textContent = dmg ? "Damage taken by player" : "Deaths by player";
+  $("gridHint").textContent = dmg ? `showing ${filterName()}, click a cell for the breakdown` : "click a death for the recap";
+  $("causesTitle").textContent = dmg ? "Damage by ability" : "What killed people";
+  $("causesHint").textContent = dmg ? "click a name to filter, tick = avoidable" : "tick = counts as avoidable";
+  $("legend").hidden = dmg;
+  renderPulls();
+  if (dmg) { renderDmgStats(); renderDmgGrid(); renderDmgCauses(); renderDmgRecap(); }
+  else { renderStats(); renderGrid(); renderCauses(); renderRecap(); }
+}
+
+$("vDeaths").addEventListener("click", () => { state.view = "deaths"; render(); });
+$("vDamage").addEventListener("click", () => { state.view = "damage"; render(); });
+$("causes").addEventListener("click", e => {
+  if (e.target.closest("#hideUn")) {
+    state.hide = !state.hide;
+    try { localStorage.setItem("hideUnavoidable", state.hide ? "1" : ""); } catch {}
+    render(); return;
+  }
+  const b = e.target.closest("[data-ab]"); if (!b || state.view !== "damage") return;
+  const a = b.dataset.ab;
+  state.ab = state.ab === a && !a.startsWith("__") ? "__avoid" : a;
+  render();
+});
+$("recap").addEventListener("input", e => {
+  if (e.target.id === "winR") $("winV").textContent = e.target.value + "s";
+});
+$("recap").addEventListener("change", e => {
+  if (e.target.id !== "winR") return;
+  state.win = +e.target.value;
+  try { localStorage.setItem("recapWindow", state.win); } catch {}
+  renderRecap();
+  $("winR").focus();
+});
+$("recap").addEventListener("click", e => {
+  if (e.target.closest("#dclear")) { state.dsel = null; render(); return; }
+  const r = e.target.closest(".rank"); if (!r) return;
+  if (r.dataset.i) { state.sel = D.deaths[+r.dataset.i]; state.view = "deaths"; if (!state.all) state.pull = state.sel.f; render(); return; }
+  state.dsel = r.dataset.dp; render();
+});
+
+$("pulls").addEventListener("click", e => { const b = e.target.closest(".pull"); if (!b) return; state.pull = +b.dataset.id; state.all = false; render(); });
+$("all").addEventListener("click", () => { state.all = !state.all; render(); });
+$("late").addEventListener("click", () => { state.late = !state.late; if (state.sel && !visible(state.sel)) state.sel = null; render(); });
+$("grid").addEventListener("click", e => {
+  const rp = e.target.closest("[data-pull]");
+  if (rp) { state.pull = +rp.dataset.pull; state.all = false; state.dsel = null; render(); return; }
+  const c = e.target.closest(".cell[data-dp]");
+  if (c) { state.dsel = c.dataset.dp; if (!state.all) state.pull = +c.dataset.f; render(); return; }
+  const b = e.target.closest(".cell[data-i]"); if (!b) return;
+  state.sel = D.deaths[+b.dataset.i];
+  if (!state.all) state.pull = state.sel.f;
+  render();
+});
+$("causes").addEventListener("change", e => {
+  const a = e.target.dataset.a; if (!a) return;
+  e.target.checked ? avoid.add(a) : avoid.delete(a);
+  saveAvoid();
+  D.deaths.forEach(judge); render();
+});
+
+const EMB = window.EMBEDDED;
+let APP = null;
+
+function api(path, body, method) {
+  return fetch(path, {
+    method: method || (body ? "POST" : "GET"),
+    headers: { "Content-Type": "application/json", "X-Raid-Review": "1" },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then(async r => {
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || r.statusText);
+    return j;
+  });
+}
+
+function show(view) {
+  for (const v of ["homeView", "reviewView", "historyView"]) $(v).hidden = v !== view;
+  $("exportBtn").hidden = view !== "reviewView" || !!EMB;
+  if (view !== "reviewView") { $("crumb").textContent = ""; document.title = "Raid Review"; }
+  hideTip();
+  window.scrollTo(0, 0);
+}
+
+function saveAvoid() {
+  const list = [...avoid];
+  if (EMB) {
+    try { localStorage.setItem("avoid-" + D.meta.encounter, JSON.stringify(list)); } catch {}
+    return;
+  }
+  APP.avoid[D.meta.encounter] = list;
+  api("/api/avoid", { encounter: D.meta.encounter, list }).catch(e => console.error(e));
+}
+
+function openReview(data, key) {
+  D = data; PULLS = data.pulls; KO = data.noDamage;
+  WCL = `https://www.warcraftlogs.com/reports/${data.meta.code}`;
+  for (const d of D.deaths) {
+    if (!d.e) continue;
+    d.ev = d.e.map(([t, k, a, amt, abs, hp, src]) => ({ t, k: k ? "h" : "d", a: D.evNames[a], amt, abs, hp, src: src >= 0 ? D.evSrcs[src] : "" }));
+    delete d.e;
+  }
+  let saved = null;
+  if (EMB) try { saved = JSON.parse(localStorage.getItem("avoid-" + data.meta.encounter)); } catch {}
+  avoid = new Set(saved || data.avoid);
+  Object.assign(state, { all: false, late: false, sel: null, view: "deaths", ab: "__avoid", dsel: null });
+  try { state.hide = localStorage.getItem("hideUnavoidable") === "1"; state.win = +localStorage.getItem("recapWindow") || 10; } catch {}
+  D.deaths.forEach(judge);
+  for (const p of PULLS) {
+    if (p.wipe == null) continue;
+    const burst = D.deaths.filter(d => d.f === p.id && d.ts >= p.wipe && d.ts <= p.wipe + 3), c = new Map();
+    burst.forEach(d => c.set(d.kb, (c.get(d.kb) || 0) + 1));
+    p.burst = burst.length;
+    p.trigger = [...c.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+  const best = PULLS.find(p => p.kill) || PULLS.reduce((a, b) => a.boss < b.boss ? a : b);
+  state.pull = best.id;
+  const early = D.deaths.filter(d => d.f === best.id && !d.late);
+  state.sel = early.find(d => d.flags.includes("def") || d.flags.includes("heal")) || early[0] || null;
+
+  const m = data.meta, wipes = PULLS.filter(p => !p.kill).length, kills = PULLS.length - wipes;
+  const link = `${WCL}?boss=${m.encounter}&difficulty=${m.difficulty}${m.mode === "all" ? "" : `&${m.mode}=1`}`;
+  $("metaLabel").innerHTML = [m.guild, m.zone, m.difficultyName, new Date(m.date).toLocaleDateString()].filter(Boolean).map(esc).join(" · ")
+    + ` · <a href="${link}" target="_blank" rel="noopener">Warcraft Logs report</a>`;
+  $("reviewTitle").textContent = `${m.boss} ${m.mode === "kills" ? "Kill" : "Death"} Review`;
+  $("sub").textContent = `${[wipes && `${wipes} wipe${wipes > 1 ? "s" : ""}`, kills && `${kills} kill${kills > 1 ? "s" : ""}`].filter(Boolean).join(", ")}, ${D.deaths.length} deaths. Who died, to what, whether a defensive was ready, and whether heals were landing.`;
+  if (key) $("exportBtn").href = `/api/export/${key}`;
+  show("reviewView");
+  $("crumb").textContent = `${m.boss} · ${m.difficultyName} · ${new Date(m.date).toLocaleDateString()}`;
+  document.title = `${m.boss} Review`;
+  render();
+}
+
+const openKey = key => api(`/api/review/${key}`).then(r => openReview(r, key));
+
+/* home */
+
+async function loadHome() {
+  APP = await api("/api/state");
+  $("setup").hidden = APP.configured;
+  $("openPanel").hidden = !APP.configured;
+  if (APP.clientId) $("cid").value = APP.clientId;
+  renderSaved();
+  show("homeView");
+}
+
+const fmtDate = t => new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+const modeName = m => ({ wipes: "Wipes", kills: "Kills", all: "All pulls" }[m]);
+
+function renderSaved() {
+  if (!APP.reviews.length) { $("saved").innerHTML = `<tbody><tr><td class="note">No reviews yet. Paste a report link above to make the first one.</td></tr></tbody>`; return; }
+  $("saved").innerHTML = `<thead><tr><th>Night</th><th>Guild</th><th>Boss</th><th>Pulls</th><th>Best</th><th>Deaths before wipe</th><th></th></tr></thead><tbody>${APP.reviews.map(r => {
+    const m = r.meta, s = r.summary;
+    return `<tr><td>${fmtDate(m.date)}</td><td>${esc(m.guild || "")}</td><td><b>${esc(m.boss)}</b> ${esc(m.difficultyName)} <span class="note">${modeName(m.mode)}</span></td>
+      <td class="mono">${s.pulls}</td><td class="mono">${s.kills ? "Kill" : s.best.toFixed(1) + "%"}</td><td class="mono">${s.deathsBeforeWipe}</td>
+      <td class="acts"><button class="btn small" data-open="${r.key}">Open</button><a class="btn small ghost" href="/api/export/${r.key}">Export</a><button class="btn small ghost" data-del="${r.key}">Delete</button></td></tr>`;
+  }).join("")}</tbody>`;
+}
+
+$("saved").addEventListener("click", async e => {
+  const o = e.target.closest("[data-open]");
+  if (o) return openKey(o.dataset.open).catch(err => alert(err.message));
+  const d = e.target.closest("[data-del]");
+  if (!d) return;
+  if (d.dataset.armed !== "1") { d.dataset.armed = "1"; d.textContent = "Really delete?"; d.classList.add("danger"); return; }
+  await api(`/api/review/${d.dataset.del}`, null, "DELETE");
+  loadHome();
+});
+
+$("credForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("credBtn").disabled = true; $("credMsg").className = "note"; $("credMsg").textContent = "Testing...";
+  try {
+    await api("/api/credentials", { clientId: $("cid").value, secret: $("csecret").value });
+    $("csecret").value = "";
+    $("credMsg").textContent = "Connected.";
+    loadHome();
+  } catch (err) {
+    $("credMsg").className = "note msg-err"; $("credMsg").textContent = err.message;
+  } finally { $("credBtn").disabled = false; }
+});
+
+let lastReport = null;
+$("reportForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("lookBtn").disabled = true; $("reportMsg").className = "note"; $("reportMsg").textContent = "Looking up the report..."; $("encounters").innerHTML = "";
+  try {
+    const ov = lastReport = await api("/api/report", { link: $("link").value });
+    $("reportMsg").textContent = `${ov.title}${ov.guild ? " · " + ov.guild : ""} · ${fmtDate(ov.startTime)}`;
+    if (!ov.encounters.length) { $("reportMsg").textContent += ". No boss pulls in this report."; return; }
+    const pick = ov.pick;
+    $("encounters").innerHTML = ov.encounters.map(g => {
+      const modes = [g.wipes && "wipes", g.kills && "kills", g.wipes && g.kills && "all"].filter(Boolean);
+      const isPick = pick.encounter === g.encounter && (pick.difficulty == null || pick.difficulty === g.difficulty);
+      return `<div class="enc${isPick ? " pick" : ""}"><div><b>${esc(g.name)}</b> ${esc(g.difficultyName)}
+        <div class="note">${g.wipes} wipe${g.wipes === 1 ? "" : "s"}, ${g.kills} kill${g.kills === 1 ? "" : "s"}${g.kills ? "" : ` · best ${g.best.toFixed(1)}%`}</div></div>
+        <div class="acts">${modes.map(mo => {
+          const key = `${ov.code}_${g.encounter}_${g.difficulty}_${mo}`, have = APP.reviews.some(r => r.key === key);
+          return `<button class="btn small${isPick && mo === (pick.mode || modes[0]) ? "" : " ghost"}" data-run="${mo}" data-enc="${g.encounter}" data-diff="${g.difficulty}">${have ? "Open" : "Review"} ${modeName(mo).toLowerCase()}</button>`
+            + (have ? `<button class="btn small ghost" data-run="${mo}" data-enc="${g.encounter}" data-diff="${g.difficulty}" data-refresh="1" title="Fetch again from Warcraft Logs">Refetch</button>` : "");
+        }).join("")}</div></div>`;
+    }).join("");
+  } catch (err) {
+    $("reportMsg").className = "note msg-err"; $("reportMsg").textContent = err.message;
+  } finally { $("lookBtn").disabled = false; }
+});
+
+$("encounters").addEventListener("click", async e => {
+  const b = e.target.closest("[data-run]");
+  if (!b || !lastReport) return;
+  $("encounters").querySelectorAll("button").forEach(x => { x.disabled = true; });
+  try {
+    const res = await api("/api/review", { code: lastReport.code, encounter: +b.dataset.enc, difficulty: +b.dataset.diff, mode: b.dataset.run, refresh: !!b.dataset.refresh });
+    if (res.key) return await openKey(res.key);
+    await follow(res.job);
+  } catch (err) {
+    $("reportMsg").className = "note msg-err"; $("reportMsg").textContent = err.message;
+  } finally { $("encounters").querySelectorAll("button").forEach(x => { x.disabled = false; }); }
+});
+
+function follow(job) {
+  $("progress").hidden = false;
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const j = await api(`/api/job/${job}`).catch(err => ({ error: err.message, finished: true }));
+        $("progStage").textContent = j.stage || "";
+        $("progNum").textContent = j.total > 1 ? `${j.done} / ${j.total}` : "";
+        $("progBar").style.width = `${j.total ? Math.round(100 * j.done / j.total) : 0}%`;
+        if (!j.finished) return setTimeout(tick, 700);
+        $("progress").hidden = true;
+        if (j.error) return reject(new Error(j.error));
+        APP = await api("/api/state");
+        await openKey(j.key);
+        resolve();
+      } catch (err) { $("progress").hidden = true; reject(err); }
+    };
+    tick();
+  });
+}
+
+/* compare nights */
+
+const METRICS = [
+  ["avoid", "Avoidable dmg / pull", p => p.pulls ? sumSet(p.abs) / p.pulls : 0, v => k(v)],
+  ["deaths", "Deaths / pull", p => p.pulls ? p.deaths / p.pulls : 0, v => v.toFixed(2)],
+  ["def", "Died with defensive ready", p => p.defReady, v => String(v)],
+  ["heal", "No-heal deaths", p => p.noHeals, v => String(v)],
+];
+const hist = { group: null, metric: "avoid", avoid: new Set() };
+const sumSet = o => Object.entries(o).reduce((t, [a, v]) => t + (hist.avoid.has(a) ? v : 0), 0);
+
+async function openHistory() {
+  APP = await api("/api/state");
+  const groups = new Map();
+  for (const r of APP.reviews) {
+    const g = `${r.meta.encounter}:${r.meta.difficulty}`;
+    if (!groups.has(g)) groups.set(g, `${r.meta.boss} ${r.meta.difficultyName}`);
+  }
+  if (!groups.size) { await loadHome(); $("reportMsg").textContent = "Save a review first, then compare nights."; return; }
+  if (!groups.has(hist.group)) hist.group = groups.keys().next().value;
+  $("histBoss").innerHTML = [...groups].map(([g, label]) => `<option value="${g}"${g === hist.group ? " selected" : ""}>${esc(label)}</option>`).join("");
+  show("historyView");
+  renderHistory();
+}
+
+function renderHistory() {
+  const [enc, diff] = hist.group.split(":").map(Number);
+  const nights = APP.reviews.filter(r => r.meta.encounter === enc && r.meta.difficulty === diff).sort((a, b) => a.meta.date - b.meta.date);
+  hist.avoid = new Set(APP.avoid[enc] || APP.defaults[enc] || ["No damage logged", "Falling"]);
+  const [, label, value, fmt] = METRICS.find(m => m[0] === hist.metric);
+  $("histMetric").innerHTML = METRICS.map(([id, l]) => `<button data-m="${id}" aria-pressed="${id === hist.metric}">${l}</button>`).join("");
+  $("histTitle").textContent = `${nights[0].meta.boss} ${nights[0].meta.difficultyName}`;
+  $("histNote").textContent = hist.metric === "avoid"
+    ? `Avoidable uses the list you ticked for this boss (${[...hist.avoid].join(", ") || "nothing ticked"}). Damage counts up to the wipe.`
+    : "Deaths count up to the wipe. Lower is better everywhere.";
+  const players = new Map();
+  nights.forEach((n, i) => Object.entries(n.summary.players).forEach(([name, p]) => {
+    if (!players.has(name)) players.set(name, { name, cls: p.cls, spec: p.spec, v: [] });
+    players.get(name).v[i] = value(p);
+  }));
+  const last = nights.length - 1;
+  const rows = [...players.values()].sort((a, b) => (b.v[last] ?? -1) - (a.v[last] ?? -1) || a.name.localeCompare(b.name));
+  const cell = (v, prev, f = fmt) => {
+    if (v == null) return `<td class="note">·</td>`;
+    const cls = prev == null || Math.abs(v - prev) <= Math.max(prev * 0.1, 1e-9) ? "" : v < prev ? "better" : "worse";
+    return `<td class="mono ${cls}">${f(v)}</td>`;
+  };
+  let h = `<thead><tr><th>Player</th>${nights.map(n => `<th><button class="abtn" data-open="${n.key}" title="Open this review">${new Date(n.meta.date).toLocaleDateString(undefined, { day: "numeric", month: "short" })}<br><span class="note">${modeName(n.meta.mode)}</span></button></th>`).join("")}</tr></thead><tbody>`;
+  h += `<tr class="raidrow"><td style="text-align:left">Pulls · best</td>${nights.map(n => `<td>${n.summary.pulls} · ${n.summary.kills ? "kill" : n.summary.best.toFixed(1) + "%"}</td>`).join("")}</tr>`;
+  h += `<tr class="raidrow"><td style="text-align:left">Raid deaths / pull</td>${nights.map((n, i) => cell(n.summary.deathsBeforeWipe / n.summary.pulls, i ? nights[i - 1].summary.deathsBeforeWipe / nights[i - 1].summary.pulls : null, v => v.toFixed(2))).join("")}</tr>`;
+  for (const p of rows) {
+    h += `<tr><td style="text-align:left"><span class="who"><i class="cls" style="background:${CLS[p.cls] || "var(--muted)"}"></i>${esc(p.name)} <small>${esc(p.spec)}</small></span></td>`;
+    h += nights.map((n, i) => cell(p.v[i], i ? p.v[i - 1] : null)).join("") + "</tr>";
+  }
+  $("histTable").innerHTML = h + "</tbody>";
+}
+
+$("histBoss").addEventListener("change", e => { hist.group = e.target.value; renderHistory(); });
+$("histMetric").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (b) { hist.metric = b.dataset.m; renderHistory(); } });
+$("histTable").addEventListener("click", e => { const b = e.target.closest("[data-open]"); if (b) openKey(b.dataset.open); });
+
+$("goHome").addEventListener("click", () => { if (!EMB) loadHome(); });
+$("goSettings").addEventListener("click", async () => { await loadHome(); $("setup").hidden = false; $("cid").focus(); });
+$("goHistory").addEventListener("click", () => openHistory().catch(err => alert(err.message)));
+
+if (EMB) {
+  document.body.classList.add("embedded");
+  openReview(EMB, null);
+} else {
+  loadHome().catch(err => { document.body.insertAdjacentHTML("afterbegin", `<p class="msg-err" style="padding:16px">Could not reach Raid Review: ${esc(err.message)}</p>`); });
+}
+</script>
+
+</body>
+</html>
